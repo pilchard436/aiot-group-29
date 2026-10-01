@@ -1,4 +1,4 @@
-from machine import RTC, I2C, Pin
+from machine import RTC, I2C, Pin, ADC
 import micropython
 import time
 import ssd1306
@@ -14,6 +14,21 @@ rtc.datetime((2026, 9, 30, 2, 12, 0, 0, 0))
 # Feather ESP32 V2: SCL = GPIO 20, SDA = GPIO 22.
 i2c = I2C(0, scl=Pin(20), sda=Pin(22), freq=400000)
 oled = ssd1306.SSD1306_I2C(128, 32, i2c)
+
+# Analog light sensor, same wiring as Lab 2. Higher readings mean more light.
+light_sensor = ADC(Pin(36))
+light_sensor.atten(ADC.ATTN_11DB)  # full 0-3.3 V input range
+light_sensor.width(ADC.WIDTH_12BIT)  # readings are 0..4095
+
+# The SSD1306 sets brightness through its contrast register (0-255). Keep a
+# small minimum so the time is still readable in a dark room.
+MIN_CONTRAST = 1
+MAX_CONTRAST = 255
+# Only resend the contrast command when it changes by more than this, so
+# sensor noise does not cause constant I2C writes or visible flicker.
+CONTRAST_STEP = 8
+# Exponential smoothing factor for the light reading (0..1, lower = smoother).
+LIGHT_SMOOTHING = 0.2
 
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
@@ -95,11 +110,13 @@ button_b.irq(trigger=Pin.IRQ_FALLING, handler=make_isr(handle_b))
 button_c.irq(trigger=Pin.IRQ_FALLING, handler=make_isr(handle_c))
 
 
-def draw(year, month, day, weekday, hours, minutes, seconds):
+def draw(year, month, day, weekday, hours, minutes, seconds, light, contrast):
     oled.fill(0)
     oled.text("{:02d}:{:02d}:{:02d}".format(hours, minutes, seconds), 0, 0)
     oled.text("{} {:04d}-{:02d}-{:02d}".format(
         DAYS[weekday], year, month, day), 0, 12)
+    # Bottom line: raw light reading and the contrast it maps to.
+    oled.text("L:{:4d} C:{:3d}".format(light, contrast), 0, 24)
 
     if mode != MODE_RUN:
         # Underline the field being edited. Each character is 8 px wide and
@@ -112,11 +129,31 @@ def draw(year, month, day, weekday, hours, minutes, seconds):
     oled.show()
 
 
+def light_to_contrast(light):
+    # Linear map: dark room (0) -> MIN_CONTRAST, bright room (4095) -> MAX_CONTRAST.
+    return MIN_CONTRAST + (MAX_CONTRAST - MIN_CONTRAST) * light // 4095
+
+
 print("Checkpoint 2 - Part 2 Task 4")
 
 last_second = -1
+light = light_sensor.read()
+contrast = light_to_contrast(light)
+oled.contrast(contrast)
 
 while True:
+    # Smooth the reading so a passing shadow or ADC noise does not make the
+    # screen flicker.
+    smoothed = (1 - LIGHT_SMOOTHING) * light + LIGHT_SMOOTHING * light_sensor.read()
+    light = round(smoothed)
+
+    target = light_to_contrast(light)
+    # Always allow reaching the exact limits so full dim/bright is possible.
+    if (abs(target - contrast) >= CONTRAST_STEP
+            or (target != contrast and target in (MIN_CONTRAST, MAX_CONTRAST))):
+        contrast = target
+        oled.contrast(contrast)
+
     year, month, day, weekday, hours, minutes, seconds, _ = rtc.datetime()
 
     # Redraw when the second changes or a button changed something, to avoid
@@ -124,6 +161,7 @@ while True:
     if seconds != last_second or needs_redraw:
         last_second = seconds
         needs_redraw = False
-        draw(year, month, day, weekday, hours, minutes, seconds)
+        draw(year, month, day, weekday, hours, minutes, seconds, light, contrast)
+        print("light:", light, "contrast:", contrast)
 
     time.sleep_ms(20)
