@@ -116,7 +116,9 @@ def main():
         raise
 
     show_lines(
-        "Current weather",
+        # "Current weather",
+        "Lat: {:.5f}".format(latitude),
+        "Lon: {:.5f}".format(longitude),
         "Temp: {:.1f} C".format(temperature),
         description,
     )
