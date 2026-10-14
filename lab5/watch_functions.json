@@ -1,0 +1,85 @@
+{
+  "transport": {
+    "protocol": "TCP socket",
+    "port": 8080,
+    "request": "Send one UTF-8 JSON object followed by a newline, then read one UTF-8 JSON response line.",
+    "request_format": {
+      "name": "function_name",
+      "args": []
+    },
+    "response_format": {
+      "ok": true,
+      "result": "function result"
+    },
+    "error_response_format": {
+      "ok": false,
+      "error": "error description"
+    }
+  },
+  "routing_instruction": "Choose a defined function when the user's request matches one of its capabilities. If the request does not match any defined function, call display_message with a concise response or explanation instead of inventing a function name.",
+  "functions": [
+    {
+      "name": "screen_on",
+      "args": [],
+      "explanation": "Turn on the smartwatch OLED screen."
+    },
+    {
+      "name": "screen_off",
+      "args": [],
+      "explanation": "Turn off the smartwatch OLED screen."
+    },
+    {
+      "name": "display_time",
+      "args": [],
+      "explanation": "Show the smartwatch's current RTC time and date. Use this time as the reference when converting a relative alarm interval into a clock timestamp."
+    },
+    {
+      "name": "display_message",
+      "args": [
+        {
+          "name": "message",
+          "type": "string",
+          "description": "Short text to show on the smartwatch OLED."
+        }
+      ],
+      "explanation": "Display the supplied text message on the smartwatch screen. Use this as the fallback for any user command or request that does not match one of the other defined functions; pass a concise response or explanation as message."
+    },
+    {
+      "name": "set_alarm",
+      "args": [
+        {
+          "name": "hour",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 23,
+          "description": "Hour in 24-hour format, from 0 through 23."
+        },
+        {
+          "name": "minute",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 59,
+          "description": "Minute, from 0 through 59."
+        },
+        {
+          "name": "second",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 59,
+          "description": "Second, from 0 through 59."
+        }
+      ],
+      "explanation": "Set a daily alarm for the absolute hour:minute:second timestamp. If the user gives a time interval, first obtain the current smartwatch time with display_time, then convert the interval to a target clock timestamp, including wraparound at midnight. Pass the resulting hour, minute, and second; never pass the interval."
+    },
+    {
+      "name": "display_location",
+      "args": [],
+      "explanation": "Get and display the smartwatch's approximate current network location."
+    },
+    {
+      "name": "display_weather",
+      "args": [],
+      "explanation": "Get and display current weather for the smartwatch's approximate network location."
+    }
+  ]
+}
