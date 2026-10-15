@@ -1,0 +1,45 @@
+SPI Communication with the ADXL345 Accelerometer (Checkpoint 1)
+
+UNIs: ok2373, yf2610, jz4215
+
+Serial Peripheral Interface (SPI) is used to communicate between the controller (ESP32) and the peripheral (ADXL345 accelerometer). SPI is a synchronous, full-duplex, controller-driven bus: the ESP32 generates the clock, and on every clock tick one bit goes out on MOSI and one bit comes in on MISO at the same time. The chip on the other end decides which half of that exchange is meaningful.
+
+Four wires connect the ADXL345 to the ESP32. We ran the ADXL345 at SPI mode 3 (clock idle high, data sampled on the second edge) and we clocked it at 5 MHz:
+
+* SCLK (-> ESP pin 5):  clock; ESP32 generates one pulse per bit; both sides latch MOSI and MISO on these edges.
+* MOSI (-> ESP pin 19): "Controller Out, Peripheral In." Bits going from ESP32 to the ADXL345.
+* MISO (-> ESP pin 21): "Controller In, Peripheral Out." Bits coming back from the ADXL345 to the ESP32.
+* CS   (-> ESP pin 33): chip select. Pulled LOW to start a transaction and HIGH to end one. The ADXL345's command/address state machine resets on every falling edge of CS, so every command byte plus its data bytes must live inside a single CS-low window.
+
+Power and ground are wired separately: VIN to 3.3 V on the Feather and GND to GND. The lab didn't require using the interrupt pins on ADXL345.
+
+How read/write is performed
+
+MicroPython's SPI library provides three functions:
+
+* spi.write(tx): clock out tx, discard what came in on MISO.
+* spi.readinto(rx[, filler]): clock out `filler` bytes (default 0x00) for len(rx) ticks, keep the MISO bytes in rx.
+* spi.write_readinto(tx, rx): clock out tx and keep MISO simultaneously (len(tx) must equal len(rx)).
+
+On top of raw SPI, the ADXL345 defines its own one-byte command format
+for the first byte of every transaction:
+
+bit 7   : R/W  -> 1 = read, 0 = write
+bit 6   : MB   -> 1 = multi-byte burst, 0 = single byte
+bits 5-0: addr -> the register address (0x00..0x3F)
+
+Thus, we have two flags in our first checkpoint:
+SPI_READ  = 0x80   # 1 << 7
+SPI_MULTI = 0x40   # 1 << 6
+
+Writing a register is a two-byte transaction. We pull CS low, send [command, value], then raise CS. The ADXL345 reads the first 8 bits as "write to register X", reads the next 8 bits as the value, and commits the write when CS goes high. 
+
+We use write_reg() during initialization to configure DATA_FORMAT (0x31), BW_RATE (0x2C), INT_ENABLE (0x2E), FIFO_CTL (0x38), and POWER_CTL (0x2D) based on the ADXL345 documentation. 
+
+Reading a register is also a two-byte transaction, but now only the second half is useful in the other direction. We pull CS low, send the command byte with the R/W bit set, then call spi.readinto() to keep SCLK ticking for another 8 clocks so the chip has somewhere to put its reply. spi.readinto() does transmit something on MOSI (filler bytes), but the ADXL345 is already in "sending" mode and ignores it.
+
+We used write_reg() to read DEVID (register 0x00), which the ADXL345 always reports as 0xE5 (as part of the startup code provided by the TA) and which we checked at startup to confirm wiring.
+
+To read all three axes, we use a multibyte read (bit 6 = 1), which chip auto-increments its internal address pointer after each byte it clocks out, as long as CS stays low. One command byte followed by six captured bytes gives us DATAX0, DATAX1, DATAY0, DATAY1, DATAZ0, DATAZ1 from a single sample. Three separate reads could straddle two samples and produce torn X/Y/Z values when the board is moving.
+
+Since the ADXL345 can report both positive and negative acceleration, each axis is stored as a signed 16-bit two's-complement value. Combining the two bytes with buf[0] | (buf[1] << 8) gives us an unsigned 0..65535 Python int, so values with bit 15 set come out as large positives (e.g. 0xFFFF -> 65535) when the hardware actually meant -1. Subtracting 0x10000 (65536) when the top bit is set maps those back to the correct negative range (0xFFFF -> -1, 0x8000 -> -32768). Without this step, tilting the board one way scrolls correctly and tilting the opposite way scrolls the same direction even harder, because abs() of a huge positive number is still a huge positive number and our dominant-axis logic breaks.
