@@ -48,6 +48,8 @@ ringing = False
 ring_start_ms = 0
 ring_toggle_ms = 0
 ring_on = False
+clock_display_active = False
+clock_last_second = -1
 
 
 def _show_lines(*lines):
@@ -93,27 +95,47 @@ def screen_on():
 
 def screen_off():
     """Turn off the OLED display."""
+    global clock_display_active
+    clock_display_active = False
     oled.write_cmd(DISPLAY_OFF)
     return "Screen off"
 
 
-def display_time():
-    """Show the current RTC time and date; takes no arguments."""
+def _draw_clock(force=False):
+    global clock_last_second
     year, month, day, weekday, hours, minutes, seconds, _ = rtc.datetime()
     days = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-    screen_on()
-    _show_lines(
-        "Time {:02d}:{:02d}:{:02d}".format(hours, minutes, seconds),
-        "{} {:04d}-{:02d}-{:02d}".format(
-            days[weekday], year, month, day),
-    )
+    if force or seconds != clock_last_second:
+        screen_on()
+        _show_lines(
+            "Time {:02d}:{:02d}:{:02d}".format(hours, minutes, seconds),
+            "{} {:04d}-{:02d}-{:02d}".format(
+                days[weekday], year, month, day),
+        )
+        clock_last_second = seconds
     return "{:02d}:{:02d}:{:02d}".format(hours, minutes, seconds)
+
+
+def display_time():
+    """Start a live clock display; takes no arguments."""
+    global clock_display_active, clock_last_second
+    clock_display_active = True
+    clock_last_second = -1
+    return _draw_clock(force=True)
+
+
+def service_clock():
+    """Refresh the live clock when its displayed second changes."""
+    if clock_display_active:
+        return _draw_clock()
 
 
 def display_message(message):
     """Show a text message on the OLED; args: [message]."""
+    global clock_display_active
     if not isinstance(message, str):
         raise TypeError("message must be text")
+    clock_display_active = False
     screen_on()
     _show_lines(*_wrap_message(message))
     return message
@@ -138,7 +160,7 @@ def stop_alarm():
 def set_alarm(hour, minute, second):
     """Set a daily alarm; args: [hour (0-23), minute (0-59), second (0-59)]."""
     global alarm_hours, alarm_minutes, alarm_seconds
-    global alarm_enabled, alarm_fired
+    global alarm_enabled, alarm_fired, clock_display_active
     if type(hour) is not int:
         raise TypeError("hour must be an integer")
     if type(minute) is not int:
@@ -159,6 +181,7 @@ def set_alarm(hour, minute, second):
     alarm_seconds = second
     alarm_enabled = True
     alarm_fired = False
+    clock_display_active = False
     screen_on()
     _show_lines("Alarm set", "{:02d}:{:02d}:{:02d}".format(
         hour, minute, second))
@@ -169,6 +192,7 @@ def set_alarm(hour, minute, second):
 def service_alarm():
     """Poll the alarm; call regularly from the smartwatch server loop."""
     global alarm_fired, ringing, ring_start_ms, ring_toggle_ms
+    global clock_display_active
     now = rtc.datetime()
     at_alarm_time = (now[4] == alarm_hours
                      and now[5] == alarm_minutes
@@ -179,6 +203,7 @@ def service_alarm():
     elif alarm_enabled and not alarm_fired and not ringing:
         alarm_fired = True
         ringing = True
+        clock_display_active = False
         ring_start_ms = time.ticks_ms()
         ring_toggle_ms = ring_start_ms
         _set_ring_output(True)
@@ -241,8 +266,10 @@ def _get_coordinates():
 
 def display_location():
     """Show the current network location; takes no arguments."""
+    global clock_display_active
     _connect_wifi()
     latitude, longitude = _get_coordinates()
+    clock_display_active = False
     screen_on()
     _show_lines(
         "Your coordinates",
@@ -254,6 +281,7 @@ def display_location():
 
 def display_weather():
     """Show current local weather; takes no arguments."""
+    global clock_display_active
     if (not OPENWEATHER_API_KEY
             or OPENWEATHER_API_KEY == "YOUR_OPENWEATHER_API_KEY"):
         raise ValueError("Set OPENWEATHER_API_KEY before requesting weather")
@@ -275,6 +303,7 @@ def display_weather():
     if (not isinstance(temperature, (int, float))
             or not isinstance(description, str)):
         raise ValueError("Weather response has invalid conditions")
+    clock_display_active = False
     screen_on()
     _show_lines(
         "Current weather",
@@ -385,6 +414,7 @@ def serve_forever(port=SERVER_PORT):
 
         while True:
             service_alarm()
+            service_clock()
             if poller.poll(100):
                 client, address = server.accept()
                 _handle_client(client, address)

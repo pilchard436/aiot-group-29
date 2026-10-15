@@ -31,7 +31,7 @@
     {
       "name": "display_time",
       "args": [],
-      "explanation": "Show the smartwatch's current RTC time and date. Use this time as the reference when converting a relative alarm interval into a clock timestamp."
+      "explanation": "Start a live clock on the smartwatch OLED that refreshes every second until another display command or screen_off replaces it. Use the shown RTC time as the reference when converting a relative alarm interval into a clock timestamp."
     },
     {
       "name": "display_message",
