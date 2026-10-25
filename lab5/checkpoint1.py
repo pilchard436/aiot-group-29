@@ -4,15 +4,16 @@ import whisper
 whisper_model = whisper.load_model("tiny.en")
 
 def process_input(audio):
-    result = whisper_model.transcribe("audio")["result"]
-    transcription = f"Placeholder for audio: {whisper_model.transcribe(audio)}"
+    print("TEMP AUDIO PATH: "+audio)
+    result = whisper_model.transcribe(audio)
+    transcription = result["text"]
     llm_response = f"Placeholder for LLM response"
     smartwatch_response = f"Placeholder for smartwatch response"
     return transcription, llm_response, smartwatch_response
 
 ui = gr.Interface(
     inputs=[
-        gr.Audio(sources=["microphone"], type="filepath", label="Voice Input"),
+        gr.Audio(sources=["microphone"], type="filepath", format="mp3", label="Voice Input"),
     ],
     fn=process_input,
     outputs=[
@@ -21,9 +22,10 @@ ui = gr.Interface(
         gr.Textbox(label="Smartwatch Response")
     ],
     title="Voice Assistant",
-    description="My capabilities: XXX",
+    description="Checkpoint 1",
     # allow_flagging="never"
     )
+
 
 if __name__ == "__main__":
     ui.launch(debug=False, share=True)
