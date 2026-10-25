@@ -2,6 +2,10 @@ import asyncio
 import json
 import socket
 from google import genai
+import gradio as gr
+import whisper
+
+whisper_model = whisper.load_model("tiny.en")
 GEMINI_API_KEY = "AQ.Ab8RN6L8X9Kzcr1daof8fRpAW25RSmJ0iRF0i1Tis1iqPeDxLw"
 SERVER_PORT = 8080
 MAX_COMMAND_BYTES = 512
@@ -181,17 +185,55 @@ def send_command(host, response_text):
         raise ValueError("Board returned an invalid response")
     return board_response
 
+# # uncomment this for part 3 integration
+# if __name__ == "__main__":
+#     board_host = "10.206.74.222".strip()
+#     # board_host = input("Enter the smartwatch board IP address: ").strip()
+#     while True:
+#         user_input = input("Enter your request: ")
+#         llm_response = asyncio.run(
+#             get_llm_response(f"{PROMPT}\n\nuser input:{user_input}"))
+#         print("LLM command:", llm_response)
+#         board_response = send_command(board_host, llm_response)
+#         if board_response["ok"]:
+#             print("Smartwatch:", board_response.get("result", "Command completed"))
+#         else:
+#             print("Smartwatch error:", board_response.get("error", "Unknown error"))
+
+
+def process_input(audio):
+    print("TEMP AUDIO PATH: "+audio)
+    result = whisper_model.transcribe(audio)
+    transcription = result["text"]
+    # while True:
+    response = asyncio.run(
+        get_llm_response(f"{PROMPT}\n\nuser input:{transcription}"))
+    print("LLM command:", response)
+    # board_response = send_command(board_host, llm_response)
+    # if board_response["ok"]:
+    #     print("Smartwatch:", board_response.get("result", "Command completed"))
+    # else:
+    #     print("Smartwatch error:", board_response.get("error", "Unknown error"))
+    llm_response = response
+    smartwatch_response = "placeholder"
+    return transcription, llm_response, smartwatch_response
+
+with gr.Blocks() as ui:
+    audio = gr.Audio(
+        sources=["microphone"],
+        type="filepath",
+        label="Voice Input",
+    )
+    transcription = gr.Textbox(label="Transcription/Input")
+    llm_response = gr.Textbox(label="LLM Response")
+    smartwatch_response = gr.Textbox(label="Smartwatch Response")
+
+    audio.stop_recording(
+        fn=process_input,
+        inputs=audio,
+        outputs=[transcription, llm_response, smartwatch_response],
+    )
+
 
 if __name__ == "__main__":
-    board_host = "10.206.74.222".strip()
-    # board_host = input("Enter the smartwatch board IP address: ").strip()
-    while True:
-        user_input = input("Enter your request: ")
-        llm_response = asyncio.run(
-            get_llm_response(f"{PROMPT}\n\nuser input:{user_input}"))
-        print("LLM command:", llm_response)
-        board_response = send_command(board_host, llm_response)
-        if board_response["ok"]:
-            print("Smartwatch:", board_response.get("result", "Command completed"))
-        else:
-            print("Smartwatch error:", board_response.get("error", "Unknown error"))
+    ui.launch(debug=False, share=True)
