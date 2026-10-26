@@ -201,21 +201,29 @@ def send_command(host, response_text):
 #             print("Smartwatch error:", board_response.get("error", "Unknown error"))
 
 
-def process_input(audio):
+def process_input(audio, board_host):
     print("TEMP AUDIO PATH: "+audio)
     result = whisper_model.transcribe(audio)
     transcription = result["text"]
-    # while True:
     response = asyncio.run(
         get_llm_response(f"{PROMPT}\n\nuser input:{transcription}"))
     print("LLM command:", response)
-    # board_response = send_command(board_host, llm_response)
-    # if board_response["ok"]:
-    #     print("Smartwatch:", board_response.get("result", "Command completed"))
-    # else:
-    #     print("Smartwatch error:", board_response.get("error", "Unknown error"))
     llm_response = response
-    smartwatch_response = "placeholder"
+    board_host = board_host.strip()
+    if not board_host:
+        return transcription, llm_response, "Error: Enter the smartwatch IP address"
+
+    try:
+        board_response = send_command(board_host, llm_response)
+    except (OSError, TypeError, ValueError) as error:
+        smartwatch_response = "Error: {}".format(error)
+    else:
+        if board_response["ok"]:
+            smartwatch_response = str(
+                board_response.get("result", "Command completed"))
+        else:
+            smartwatch_response = "Smartwatch error: {}".format(
+                board_response.get("error", "Unknown error"))
     return transcription, llm_response, smartwatch_response
 
 with gr.Blocks() as ui:
@@ -224,13 +232,17 @@ with gr.Blocks() as ui:
         type="filepath",
         label="Voice Input",
     )
+    board_host = gr.Textbox(
+        label="Smartwatch IP address",
+        placeholder="Enter the ESP32 IP address",
+    )
     transcription = gr.Textbox(label="Transcription/Input")
     llm_response = gr.Textbox(label="LLM Response")
     smartwatch_response = gr.Textbox(label="Smartwatch Response")
 
     audio.stop_recording(
         fn=process_input,
-        inputs=audio,
+        inputs=[audio, board_host],
         outputs=[transcription, llm_response, smartwatch_response],
     )
 
