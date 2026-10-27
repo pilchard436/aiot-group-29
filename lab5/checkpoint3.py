@@ -202,16 +202,19 @@ def send_command(host, response_text):
 
 
 def process_input(audio, board_host):
-    print("TEMP AUDIO PATH: "+audio)
-    result = whisper_model.transcribe(audio)
-    transcription = result["text"]
-    response = asyncio.run(
-        get_llm_response(f"{PROMPT}\n\nuser input:{transcription}"))
-    print("LLM command:", response)
-    llm_response = response
+    print("TEMP AUDIO PATH: " + audio)
+    transcription = whisper_model.transcribe(audio)["text"].strip()
+    print("Transcription:", transcription)
+    if not transcription:
+        return "(no speech detected)", "", ""
+
     board_host = board_host.strip()
     if not board_host:
-        return transcription, llm_response, "Error: Enter the smartwatch IP address"
+        return transcription, "", "Error: Enter the smartwatch IP address"
+
+    llm_response = asyncio.run(
+        get_llm_response(f"{PROMPT}\n\nuser input:{transcription}"))
+    print("LLM command:", llm_response)
 
     try:
         board_response = send_command(board_host, llm_response)
@@ -225,6 +228,7 @@ def process_input(audio, board_host):
             smartwatch_response = "Smartwatch error: {}".format(
                 board_response.get("error", "Unknown error"))
     return transcription, llm_response, smartwatch_response
+
 
 with gr.Blocks() as ui:
     audio = gr.Audio(
@@ -244,6 +248,9 @@ with gr.Blocks() as ui:
         fn=process_input,
         inputs=[audio, board_host],
         outputs=[transcription, llm_response, smartwatch_response],
+    ).then(
+        fn=lambda: None,
+        outputs=audio,
     )
 
 
